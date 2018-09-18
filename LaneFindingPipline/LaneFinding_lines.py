@@ -73,7 +73,7 @@ def region_of_interest(img, vertices):
     return masked_image
 
 
-def hough_lane(img, rho, theta, threshold, min_line_len, max_line_gap, y_min):
+def hough_lane(img, rho, theta, threshold, min_line_len, max_line_gap, y_min, y_max):
     """
     霍夫变换
     Application of Hough transform
@@ -89,11 +89,22 @@ def hough_lane(img, rho, theta, threshold, min_line_len, max_line_gap, y_min):
                             minLineLength=min_line_len,
                             maxLineGap=max_line_gap)
     line_img = np.zeros((img.shape[0], img.shape[1], 3), dtype=np.uint8)
-    draw_lanes(line_img, lines, y_min)
+    draw_lanes(line_img, lines, y_min, y_max)
     return line_img
 
 
-def draw_lanes(img, lines, y_min, color=[255, 0, 0], thickness=8):
+def draw_lanes(img, lines, y_min, y_max, color=[255, 0, 0], thickness=8):
+    """
+    划线
+    :param img:
+    :param lines:
+    :param y_min:
+    :param y_max:
+    :param color:
+    :param thickness:
+    :return:
+    """
+    # 根据斜率分成左右两组车道线
     left_lines, right_lines = [], []
     for line in lines:
         for x1, y1, x2, y2 in line:
@@ -106,6 +117,7 @@ def draw_lanes(img, lines, y_min, color=[255, 0, 0], thickness=8):
     if len(left_lines) <= 0 or len(right_lines) <= 0:
         return img
 
+    # 去掉斜率过大的车道线
     clean_lines(left_lines, 0.1)
     clean_lines(right_lines, 0.1)
     left_points = [(x1, y1) for line in left_lines for x1, y1, x2, y2 in line]
@@ -113,14 +125,22 @@ def draw_lanes(img, lines, y_min, color=[255, 0, 0], thickness=8):
     right_points = [(x1, y1) for line in right_lines for x1, y1, x2, y2 in line]
     right_points = right_points + [(x2, y2) for line in right_lines for x1, y1, x2, y2 in line]
 
-    left_vtx = calc_lane_vertices(left_points, y_min, img.shape[0])
-    right_vtx = calc_lane_vertices(right_points, y_min, img.shape[0])
+    # 对车道线上的点进行拟合
+    left_vtx = calc_lane_vertices(left_points, y_min, y_max)
+    right_vtx = calc_lane_vertices(right_points, y_min, y_max)
 
+    # 根据拟合的结果绘制成线
     cv2.line(img, left_vtx[0], left_vtx[1], color, thickness)
     cv2.line(img, right_vtx[0], right_vtx[1], color, thickness)
 
 
 def clean_lines(lines, threshold):
+    """
+    将斜率超过平均值阈值的直线抛弃掉
+    :param lines:
+    :param threshold:
+    :return:
+    """
     slope = [(y2 - y1) / (x2 - x1) for line in lines for x1, y1, x2, y2 in line]
     while len(lines) > 0:
         mean = np.mean(slope)
@@ -134,6 +154,14 @@ def clean_lines(lines, threshold):
 
 
 def calc_lane_vertices(point_list, y_min, y_max):
+    """
+    对所有的点进行拟合
+    根据端点y的最小，最大坐标，计算出拟合曲线上的对应的x坐标
+    :param point_list:
+    :param y_min:
+    :param y_max:
+    :return:
+    """
     x = [p[0] for p in point_list]
     y = [p[1] for p in point_list]
     fit = np.polyfit(y, x, 1)
@@ -184,7 +212,7 @@ def process_image_lane(img):
     blur_gray = gaussian_blur(gray, blur_kernel_size)
     edges = canny(blur_gray, canny_low_threshold, canny_high_threshold)
     roi_edges = region_of_interest(edges, roi_vtx)
-    line_img = hough_lane(roi_edges, rho, theta, threshold, min_line_length, max_line_gap, 325)
+    line_img = hough_lane(roi_edges, rho, theta, threshold, min_line_length, max_line_gap, 325, img.shape[0])
     res_img = weighted_img(img, line_img, 0.8, 1, 0)
 
     return res_img
